@@ -63,10 +63,10 @@ static char *trimwhitespace(const char *str)
 
 static char *get_http_header(const char *buffer, const char *key)
 {
-    char *found = strstr(buffer, key);
+    char *found = strcasestr(buffer, key);
     if (found) {
         found += strlen(key);
-        char *found_end = strstr(found, "\r\n");
+        char *found_end = strcasestr(found, "\r\n");
         if (found_end) {
             found_end[0] = 0;//terminal string
 

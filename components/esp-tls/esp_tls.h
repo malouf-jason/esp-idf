@@ -31,6 +31,26 @@
 extern "C" {
 #endif
 
+#define ESP_ERR_ESP_TLS_BASE           0x8000             /*!< Starting number of ESP-TLS error codes */
+#define ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME           (ESP_ERR_ESP_TLS_BASE + 0x01)  /*!< Error if hostname couldn't be resolved upon tls connection */
+#define ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET              (ESP_ERR_ESP_TLS_BASE + 0x02)  /*!< Failed to create socket */
+#define ESP_ERR_ESP_TLS_UNSUPPORTED_PROTOCOL_FAMILY       (ESP_ERR_ESP_TLS_BASE + 0x03)  /*!< Unsupported protocol family */
+#define ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST            (ESP_ERR_ESP_TLS_BASE + 0x04)  /*!< Failed to connnect to host */
+#define ESP_ERR_ESP_TLS_SOCKET_SETOPT_FAILED              (ESP_ERR_ESP_TLS_BASE + 0x05)  /*!< failed to set socket option */
+#define ESP_ERR_MBEDTLS_CERT_PARTLY_OK                    (ESP_ERR_ESP_TLS_BASE + 0x06)  /*!< embedtls parse certificates was partly successful */
+#define ESP_ERR_MBEDTLS_CTR_DRBG_SEED_FAILED              (ESP_ERR_ESP_TLS_BASE + 0x07)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_SET_HOSTNAME_FAILED           (ESP_ERR_ESP_TLS_BASE + 0x08)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_CONFIG_DEFAULTS_FAILED        (ESP_ERR_ESP_TLS_BASE + 0x09)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_CONF_ALPN_PROTOCOLS_FAILED    (ESP_ERR_ESP_TLS_BASE + 0x0A)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_X509_CRT_PARSE_FAILED             (ESP_ERR_ESP_TLS_BASE + 0x0B)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_CONF_OWN_CERT_FAILED          (ESP_ERR_ESP_TLS_BASE + 0x0C)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_SETUP_FAILED                  (ESP_ERR_ESP_TLS_BASE + 0x0D)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_WRITE_FAILED                  (ESP_ERR_ESP_TLS_BASE + 0x0E)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_PK_PARSE_KEY_FAILED               (ESP_ERR_ESP_TLS_BASE + 0x0F)  /*!< embedtls api returned failed  */
+#define ESP_ERR_MBEDTLS_SSL_HANDSHAKE_FAILED              (ESP_ERR_ESP_TLS_BASE + 0x10)  /*!< embedtls api returned failed  */
+
+typedef struct esp_error_private* esp_error_handle_t;
+
 /**
  *  @brief ESP-TLS Connection State
  */
@@ -42,6 +62,11 @@ typedef enum esp_tls_conn_state {
     ESP_TLS_DONE,
 } esp_tls_conn_state_t;
 
+typedef enum esp_tls_role {
+    ESP_TLS_CLIENT = 0,
+    ESP_TLS_SERVER,
+} esp_tls_role_t;
+
 /**
  * @brief      ESP-TLS configuration parameters 
  */ 
@@ -52,21 +77,23 @@ typedef struct esp_tls_cfg {
                                                  The format is length followed by protocol
                                                  name. 
                                                  For the most common cases the following is ok:
-                                                 "\x02h2"
-                                                 - where the first '2' is the length of the protocol and
-                                                 - the subsequent 'h2' is the protocol name */
+                                                 const char **alpn_protos = { "h2", NULL };
+                                                 - where 'h2' is the protocol name */
  
-    const unsigned char *cacert_pem_buf;    /*!< Certificate Authority's certificate in a buffer */
+    const unsigned char *cacert_pem_buf;    /*!< Certificate Authority's certificate in a buffer.
+                                                 This buffer should be NULL terminated */
  
     unsigned int cacert_pem_bytes;          /*!< Size of Certificate Authority certificate
                                                  pointed to by cacert_pem_buf */
 
-    const unsigned char *clientcert_pem_buf;/*!< Client certificate in a buffer */
- 
+    const unsigned char *clientcert_pem_buf;/*!< Client certificate in a buffer
+                                                 This buffer should be NULL terminated */
+
     unsigned int clientcert_pem_bytes;      /*!< Size of client certificate pointed to by
                                                  clientcert_pem_buf */
 
-    const unsigned char *clientkey_pem_buf; /*!< Client key in a buffer */
+    const unsigned char *clientkey_pem_buf; /*!< Client key in a buffer
+                                                 This buffer should be NULL terminated */
 
     unsigned int clientkey_pem_bytes;       /*!< Size of client key pointed to by
                                                  clientkey_pem_buf */
@@ -84,7 +111,49 @@ typedef struct esp_tls_cfg {
 
     bool use_global_ca_store;               /*!< Use a global ca_store for all the connections in which
                                                  this bool is set. */
+
+    const char *common_name;                /*!< If non-NULL, server certificate CN must match this name.
+                                                 If NULL, server certificate CN must match hostname. */
+
+    bool skip_common_name;                  /*!< Skip any validation of server certificate CN field */
 } esp_tls_cfg_t;
+
+#ifdef CONFIG_ESP_TLS_SERVER
+typedef struct esp_tls_cfg_server {
+    const char **alpn_protos;                   /*!< Application protocols required for HTTP2.
+                                                     If HTTP2/ALPN support is required, a list
+                                                     of protocols that should be negotiated.
+                                                     The format is length followed by protocol
+                                                     name.
+                                                     For the most common cases the following is ok:
+                                                     const char **alpn_protos = { "h2", NULL };
+                                                     - where 'h2' is the protocol name */
+
+    const unsigned char *cacert_pem_buf;    /*!< Client CA certificate in a buffer.
+                                                     This buffer should be NULL terminated */
+
+    unsigned int cacert_pem_bytes;          /*!< Size of client CA certificate
+                                                     pointed to by cacert_pem_buf */
+
+    const unsigned char *servercert_pem_buf;    /*!< Server certificate in a buffer
+                                                     This buffer should be NULL terminated */
+
+    unsigned int servercert_pem_bytes;          /*!< Size of server certificate pointed to by
+                                                     servercert_pem_buf */
+
+    const unsigned char *serverkey_pem_buf;     /*!< Server key in a buffer
+                                                     This buffer should be NULL terminated */
+
+    unsigned int serverkey_pem_bytes;           /*!< Size of server key pointed to by
+                                                     serverkey_pem_buf */
+
+    const unsigned char *serverkey_password;    /*!< Server key decryption password string */
+
+    unsigned int serverkey_password_len;        /*!< String length of the password pointed to by
+                                                     serverkey_password */
+
+} esp_tls_cfg_server_t;
+#endif /* ! CONFIG_ESP_TLS_SERVER */
 
 /**
  * @brief      ESP-TLS Connection Handle 
@@ -112,7 +181,12 @@ typedef struct esp_tls {
 
     mbedtls_pk_context clientkey;                                               /*!< Container for the private key of the client
                                                                                      certificate */
+#ifdef CONFIG_ESP_TLS_SERVER
+    mbedtls_x509_crt servercert;                                                /*!< Container for the X.509 server certificate */
 
+    mbedtls_pk_context serverkey;                                               /*!< Container for the private key of the server
+                                                                                   certificate */
+#endif
     int sockfd;                                                                 /*!< Underlying socket file descriptor. */
  
     ssize_t (*read)(struct esp_tls  *tls, char *data, size_t datalen);          /*!< Callback function for reading data from TLS/SSL
@@ -126,7 +200,27 @@ typedef struct esp_tls {
     fd_set rset;                                                                /*!< read file descriptors */
 
     fd_set wset;                                                                /*!< write file descriptors */
+
+    bool is_tls;                                                                /*!< indicates connection type (TLS or NON-TLS) */
+
+    esp_tls_role_t role;                                                        /*!< esp-tls role
+                                                                                     - ESP_TLS_CLIENT
+                                                                                     - ESP_TLS_SERVER */
+
+    esp_error_handle_t error_handle;                                            /*!< handle to internal error descriptor */
+
 } esp_tls_t;
+
+
+/**
+ * @brief      Create TLS connection
+ *
+ * This function allocates and initializes esp-tls structure handle.
+ *
+ * @return      tls     Pointer to esp-tls as esp-tls handle if successfully initialized,
+ *                      NULL if allocation error
+ */
+esp_tls_t *esp_tls_init();
 
 /**
  * @brief      Create a new blocking TLS/SSL connection
@@ -140,9 +234,14 @@ typedef struct esp_tls {
  *                       non-TLS connection, keep this NULL. For TLS connection,
  *                       a pass pointer to esp_tls_cfg_t. At a minimum, this
  *                       structure should be zero-initialized.
- * @return pointer to esp_tls_t, or NULL if connection couldn't be opened.
+ * @param[in]  tls       Pointer to esp-tls as esp-tls handle.
+ *
+ * @return
+ *             - -1      If connection establishment fails.
+ *             -  1      If connection establishment is successful.
+ *             -  0      Reserved for connection state is in progress.
  */
-esp_tls_t *esp_tls_conn_new(const char *hostname, int hostlen, int port, const esp_tls_cfg_t *cfg);
+int esp_tls_conn_new(const char *hostname, int hostlen, int port, const esp_tls_cfg_t *cfg, esp_tls_t *tls);
 
 /**
  * @brief      Create a new blocking TLS/SSL connection with a given "HTTP" url
@@ -257,7 +356,7 @@ void esp_tls_conn_delete(esp_tls_t *tls);
  *            - bytes available in the application data
  *              record read buffer
  */
-size_t esp_tls_get_bytes_avail(esp_tls_t *tls);
+ssize_t esp_tls_get_bytes_avail(esp_tls_t *tls);
 
 /**
  * @brief      Create a global CA store, initially empty.
@@ -313,6 +412,44 @@ mbedtls_x509_crt *esp_tls_get_global_ca_store();
  */
 void esp_tls_free_global_ca_store();
 
+/**
+ * @brief      Returns last error in esp_tls (if any) and clears it.
+ *
+ * @param[in]  tls  pointer to esp-tls as esp-tls handle.
+ *
+ * @return
+ *            - ESP_OK if no error occurred
+ *            - specific error code (based on ESP_ERR_ESP_TLS_BASE) otherwise
+ */
+esp_err_t esp_tls_get_and_clear_last_error(esp_tls_t* tls);
+
+#ifdef CONFIG_ESP_TLS_SERVER
+/**
+ * @brief      Create TLS/SSL server session
+ *
+ * This function creates a TLS/SSL server context for already accepted client connection
+ * and performs TLS/SSL handshake with the client
+ *
+ * @param[in]  cfg      Pointer to esp_tls_cfg_server_t
+ * @param[in]  sockfd   FD of accepted connection
+ * @param[out] tls      Pointer to allocated esp_tls_t
+ *
+ * @return
+ *          - 0  if successful
+ *          - <0 in case of error
+ *
+ */
+int esp_tls_server_session_create(esp_tls_cfg_server_t *cfg, int sockfd, esp_tls_t *tls);
+
+/**
+ * @brief      Close the server side TLS/SSL connection and free any allocated resources.
+ *
+ * This function should be called to close each tls connection opened with esp_tls_server_session_create()
+ *
+ * @param[in]  tls  pointer to esp_tls_t
+ */
+void esp_tls_server_session_delete(esp_tls_t *tls);
+#endif /* ! CONFIG_ESP_TLS_SERVER */
 
 #ifdef __cplusplus
 }
